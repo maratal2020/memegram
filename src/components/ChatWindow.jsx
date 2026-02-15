@@ -8,34 +8,37 @@ export default function ChatWindow({ currentUser, selectedChat, onOpenMobile }) 
   const [messages, setMessages] = useState([])
   const [showGifPicker, setShowGifPicker] = useState(false)
   const bottomRef = useRef(null)
+  const seenIds = useRef(new Set())
+  const chatId = selectedChat?.id
 
-  // Fetch existing messages for this conversation
+  // Fetch history + subscribe to realtime in one effect, keyed on chatId
   useEffect(() => {
-    if (!selectedChat) return
+    if (!chatId) return
     setMessages([])
     setShowGifPicker(false)
+    seenIds.current = new Set()
+
+    let cancelled = false
 
     async function fetchMessages() {
       const { data } = await supabase
         .from('messages')
         .select('*')
         .or(
-          `and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedChat.id}),and(sender_id.eq.${selectedChat.id},receiver_id.eq.${currentUser.id})`
+          `and(sender_id.eq.${currentUser.id},receiver_id.eq.${chatId}),and(sender_id.eq.${chatId},receiver_id.eq.${currentUser.id})`
         )
         .order('created_at', { ascending: true })
 
-      if (data) setMessages(data)
+      if (!cancelled && data) {
+        data.forEach((m) => seenIds.current.add(m.id))
+        setMessages(data)
+      }
     }
 
     fetchMessages()
-  }, [selectedChat, currentUser.id])
-
-  // Real-time subscription
-  useEffect(() => {
-    if (!selectedChat) return
 
     const channel = supabase
-      .channel(`chat-${[currentUser.id, selectedChat.id].sort().join('-')}`)
+      .channel(`chat-${[currentUser.id, chatId].sort().join('-')}-${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -45,23 +48,23 @@ export default function ChatWindow({ currentUser, selectedChat, onOpenMobile }) 
         },
         (payload) => {
           const msg = payload.new
+          if (seenIds.current.has(msg.id)) return
           const isRelevant =
-            (msg.sender_id === currentUser.id && msg.receiver_id === selectedChat.id) ||
-            (msg.sender_id === selectedChat.id && msg.receiver_id === currentUser.id)
+            (msg.sender_id === currentUser.id && msg.receiver_id === chatId) ||
+            (msg.sender_id === chatId && msg.receiver_id === currentUser.id)
           if (isRelevant) {
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === msg.id)) return prev
-              return [...prev, msg]
-            })
+            seenIds.current.add(msg.id)
+            setMessages((prev) => [...prev, msg])
           }
         }
       )
       .subscribe()
 
     return () => {
+      cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [selectedChat, currentUser.id])
+  }, [chatId, currentUser.id])
 
   // Auto-scroll to bottom
   useEffect(() => {
