@@ -70,26 +70,13 @@ export default function ChatWindow({ currentUser, selectedChat, onOpenMobile }) 
 
   // Send a GIF
   async function handleSendGif(gif) {
-    const gifUrl = gif.images.fixed_height.url
-    const gifTitle = gif.title
-
-    // Optimistic insert
-    const tempMsg = {
-      id: crypto.randomUUID(),
-      sender_id: currentUser.id,
-      receiver_id: selectedChat.id,
-      gif_url: gifUrl,
-      gif_title: gifTitle,
-      created_at: new Date().toISOString(),
-    }
-    setMessages((prev) => [...prev, tempMsg])
     setShowGifPicker(false)
 
     await supabase.from('messages').insert({
       sender_id: currentUser.id,
       receiver_id: selectedChat.id,
-      gif_url: gifUrl,
-      gif_title: gifTitle,
+      gif_url: gif.images.fixed_height.url,
+      gif_title: gif.title,
     })
   }
 
