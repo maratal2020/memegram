@@ -48,14 +48,13 @@ export default function ChatWindow({ currentUser, selectedChat, onOpenMobile }) 
         },
         (payload) => {
           const msg = payload.new
+          // Only handle messages from the OTHER person — own messages
+          // are added directly from the insert response in handleSendGif
+          if (msg.sender_id === currentUser.id) return
           if (seenIds.current.has(msg.id)) return
-          const isRelevant =
-            (msg.sender_id === currentUser.id && msg.receiver_id === chatId) ||
-            (msg.sender_id === chatId && msg.receiver_id === currentUser.id)
-          if (isRelevant) {
-            seenIds.current.add(msg.id)
-            setMessages((prev) => [...prev, msg])
-          }
+          if (msg.sender_id !== chatId || msg.receiver_id !== currentUser.id) return
+          seenIds.current.add(msg.id)
+          setMessages((prev) => [...prev, msg])
         }
       )
       .subscribe()
@@ -75,12 +74,17 @@ export default function ChatWindow({ currentUser, selectedChat, onOpenMobile }) 
   async function handleSendGif(gif) {
     setShowGifPicker(false)
 
-    await supabase.from('messages').insert({
+    const { data } = await supabase.from('messages').insert({
       sender_id: currentUser.id,
       receiver_id: selectedChat.id,
       gif_url: gif.images.fixed_height.url,
       gif_title: gif.title,
-    })
+    }).select().single()
+
+    if (data && !seenIds.current.has(data.id)) {
+      seenIds.current.add(data.id)
+      setMessages((prev) => [...prev, data])
+    }
   }
 
   // Empty state — no chat selected
